@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notion Glue</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Notion Glue</h1>
+      <div class="actions">
+        <button id="extractBtn">Extract CSV from ChatGPT</button>
+        <button id="pushBtn" disabled>Sync to Notion</button>
+        <button id="pullBtn">Pull from Notion</button>
+        <button id="injectBtn" disabled>Insert pulled CSV in ChatGPT</button>
+      </div>
+      <p id="status">Open a ChatGPT tab and extract first.</p>
+      <pre id="preview"></pre>
+      <p><a href="#" id="openOptions">Open settings</a></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

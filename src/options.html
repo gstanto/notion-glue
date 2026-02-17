@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notion Glue Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Notion Glue Settings</h1>
+      <p>Set your Notion credentials and map CSV columns to Notion database properties.</p>
+
+      <label>Notion Integration Token <input id="token" type="password" /></label>
+      <label>Notion Database ID <input id="databaseId" type="text" /></label>
+      <label>CSV Delimiter <input id="delimiter" type="text" maxlength="1" /></label>
+      <label>Start Marker <input id="markerStart" type="text" /></label>
+      <label>End Marker <input id="markerEnd" type="text" /></label>
+
+      <h2>Column Mapping</h2>
+      <p class="hint">At least one row must be type <code>title</code>.</p>
+      <table>
+        <thead>
+          <tr><th>CSV Column</th><th>Notion Property</th><th>Type</th><th></th></tr>
+        </thead>
+        <tbody id="schemaRows"></tbody>
+      </table>
+
+      <div class="actions">
+        <button id="addMapping">Add mapping</button>
+        <button id="save">Save settings</button>
+      </div>
+      <p id="status"></p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
