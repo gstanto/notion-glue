@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG, storageGet, storageSet } from "./shared.js";
 const schemaRows = document.getElementById("schemaRows");
 const statusEl = document.getElementById("status");
 
-const typeOptions = ["title", "rich_text", "number", "checkbox", "url", "select", "date"];
+const typeOptions = ["title", "rich_text", "number", "checkbox", "url", "select", "status", "date"];
 
 function rowTemplate(mapping = { csvColumn: "", notionProperty: "", type: "rich_text" }) {
   const tr = document.createElement("tr");
@@ -13,8 +13,8 @@ function rowTemplate(mapping = { csvColumn: "", notionProperty: "", type: "rich_
     <td>
       <select class="type">
         ${typeOptions
-          .map((type) => `<option value="${type}" ${mapping.type === type ? "selected" : ""}>${type}</option>`)
-          .join("")}
+      .map((type) => `<option value="${type}" ${mapping.type === type ? "selected" : ""}>${type}</option>`)
+      .join("")}
       </select>
     </td>
     <td><button class="delete" type="button">Delete</button></td>
@@ -81,6 +81,35 @@ document.getElementById("addMapping").addEventListener("click", () => {
 
 document.getElementById("save").addEventListener("click", () => {
   saveConfig().catch((error) => setStatus(error.message, true));
+});
+
+document.getElementById("autoDetect").addEventListener("click", async () => {
+  try {
+    const token = document.getElementById("token").value.trim();
+    const databaseId = document.getElementById("databaseId").value.trim();
+
+    if (!token || !databaseId) {
+      throw new Error("Please enter Token and Database ID first.");
+    }
+
+    setStatus("Fetching schema from Notion...");
+    const response = await chrome.runtime.sendMessage({
+      type: "fetchSchema",
+      token,
+      databaseId
+    });
+
+    if (!response.ok) {
+      throw new Error(response.error);
+    }
+
+    // Clear and populate
+    schemaRows.innerHTML = "";
+    response.schema.forEach((mapping) => schemaRows.appendChild(rowTemplate(mapping)));
+    setStatus(`Auto-detected ${response.schema.length} columns.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 });
 
 loadConfig().catch((error) => setStatus(error.message, true));

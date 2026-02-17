@@ -34,6 +34,8 @@ function toNotionProperty(value, type) {
       return { date: value ? { start: value } : null };
     case "select":
       return { select: value ? { name: value } : null };
+    case "status":
+      return { status: value ? { name: value } : null };
     case "rich_text":
     default:
       return { rich_text: [{ type: "text", text: { content: value || "" } }] };
@@ -48,29 +50,81 @@ function toPageProperties(row, schema) {
   return properties;
 }
 
-async function pushRowsToNotion(config, rows) {
-  const settings = withConfig(config);
-  const endpoint = "https://api.notion.com/v1/pages";
+async function queryExistingPages(settings) {
+  const endpoint = `https://api.notion.com/v1/databases/${settings.notionDatabaseId}/query`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: notionHeaders(settings.notionToken),
+    body: JSON.stringify({ page_size: 100 })
+  });
 
-  for (const row of rows) {
-    const payload = {
-      parent: { database_id: settings.notionDatabaseId },
-      properties: toPageProperties(row, settings.schema)
-    };
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to query existing pages: ${response.status} ${errorBody}`);
+  }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: notionHeaders(settings.notionToken),
-      body: JSON.stringify(payload)
-    });
+  const data = await response.json();
+  const titleMap = new Map();
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Failed to write row to Notion: ${response.status} ${errorBody}`);
+  for (const page of data.results) {
+    for (const prop of Object.values(page.properties)) {
+      if (prop.type === "title") {
+        const title = prop.title.map((t) => t.plain_text).join("");
+        if (title) titleMap.set(title, page.id);
+        break;
+      }
     }
   }
 
-  return { written: rows.length };
+  return titleMap;
+}
+
+async function pushRowsToNotion(config, rows) {
+  const settings = withConfig(config);
+  const titleMap = await queryExistingPages(settings);
+
+  const titleMapping = settings.schema.find((m) => m.type === "title");
+  if (!titleMapping) {
+    throw new Error("Schema has no title property — cannot match rows.");
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  for (const row of rows) {
+    const properties = toPageProperties(row, settings.schema);
+    const titleValue = row[titleMapping.csvColumn] || "";
+    const existingPageId = titleMap.get(titleValue);
+
+    if (existingPageId) {
+      const response = await fetch(`https://api.notion.com/v1/pages/${existingPageId}`, {
+        method: "PATCH",
+        headers: notionHeaders(settings.notionToken),
+        body: JSON.stringify({ properties })
+      });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Failed to update row in Notion: ${response.status} ${errorBody}`);
+      }
+      updated++;
+    } else {
+      const response = await fetch("https://api.notion.com/v1/pages", {
+        method: "POST",
+        headers: notionHeaders(settings.notionToken),
+        body: JSON.stringify({
+          parent: { database_id: settings.notionDatabaseId },
+          properties
+        })
+      });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Failed to create row in Notion: ${response.status} ${errorBody}`);
+      }
+      created++;
+    }
+  }
+
+  return { created, updated };
 }
 
 function extractPlainValue(property) {
@@ -81,6 +135,7 @@ function extractPlainValue(property) {
   if (property.type === "checkbox") return String(Boolean(property.checkbox));
   if (property.type === "url") return property.url ?? "";
   if (property.type === "select") return property.select?.name ?? "";
+  if (property.type === "status") return property.status?.name ?? "";
   if (property.type === "date") return property.date?.start ?? "";
   return "";
 }
@@ -134,6 +189,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message.type === "fetchSchema") {
+      try {
+        const schema = await fetchDatabaseSchema(message.token, message.databaseId);
+        sendResponse({ ok: true, schema });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+      return;
+    }
+
     sendResponse({ ok: false, error: `Unknown message type: ${message.type}` });
   })().catch((error) => {
     sendResponse({ ok: false, error: error.message || String(error) });
@@ -141,3 +206,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true;
 });
+
+async function fetchDatabaseSchema(token, databaseId) {
+  const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    method: "GET",
+    headers: notionHeaders(token)
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    if (response.status === 404) {
+      throw new Error("Database not found. Please ensure you have added the 'Notion Glue' integration to the 'Master Open Loops' database page via the '...' menu -> 'Add connections'.");
+    }
+    throw new Error(`Failed to fetch database: ${response.status} ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const properties = data.properties || {};
+
+  const schema = Object.entries(properties).map(([name, prop]) => {
+    let type = prop.type;
+    // Map API types to our supported types, default to rich_text if generic
+    const supported = ["title", "rich_text", "number", "checkbox", "url", "select", "status", "date"];
+    if (!supported.includes(type)) {
+      type = "rich_text";
+    }
+    return {
+      csvColumn: name,
+      notionProperty: name,
+      type: type
+    };
+  });
+
+  // Sort so 'title' is first (user friendly)
+  schema.sort((a, b) => (b.type === 'title') - (a.type === 'title'));
+
+  return schema;
+}

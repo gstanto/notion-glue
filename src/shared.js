@@ -64,14 +64,20 @@ export function parseMarkedCsv(text, markerStart, markerEnd, delimiter) {
   const candidates = [
     { start: markerStart, end: markerEnd },
     { start: "<--DO-POST-->", end: "<!--DO-POST-->" },
-    { start: "<!--DO-POST-->", end: "<!--DO-POST-->" }
+    { start: "<!--DO-POST-->", end: "<!--DO-POST-->" },
+    { start: "```csv", end: "```" },
+    { start: "```", end: "```" }
   ];
 
   const block = candidates
     .map((pair) => {
-      const startAt = text.indexOf(pair.start);
+      // Use lastIndexOf to find the MOST RECENT block (bottom of chat)
+      const startAt = text.lastIndexOf(pair.start);
+      if (startAt === -1) return null;
+
       const endAt = text.indexOf(pair.end, startAt + pair.start.length);
-      if (startAt === -1 || endAt === -1) return null;
+      if (endAt === -1) return null;
+
       return text.slice(startAt + pair.start.length, endAt).trim();
     })
     .find(Boolean);

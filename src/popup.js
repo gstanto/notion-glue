@@ -29,6 +29,11 @@ function renderPreview(payload) {
 }
 
 async function extractFromTab() {
+  // Clear previous state to avoid confusion
+  extracted = null;
+  pushBtn.disabled = true;
+  setStatus("Extracting...", false);
+
   const config = await getConfig();
   const tab = await getActiveTab();
 
@@ -61,7 +66,7 @@ async function pushToNotion() {
     throw new Error(response?.error || "Sync failed.");
   }
 
-  setStatus(`Synced ${response.result.written} rows to Notion.`);
+  setStatus(`Created ${response.result.created}, updated ${response.result.updated} rows in Notion.`);
 }
 
 async function pullFromNotion() {
@@ -86,10 +91,28 @@ async function injectIntoChatGpt() {
   const { lastPulledCsv = "" } = await storageGet("lastPulledCsv");
   if (!lastPulledCsv) throw new Error("No pulled CSV available yet.");
 
+  // Get current config to know the schema
+  const config = await getConfig();
+  const columns = config.schema.map((s) => s.csvColumn).join(", ");
+  const markerStart = config.markerStart;
+  const markerEnd = config.markerEnd;
+
+
+  const instructions = [
+    "",
+    "---",
+    "The data above is my current project list from Notion. Use it as context for our conversation.",
+    "When I ask you to save, lock in, output, or update the list, respond with a single CSV code block using these columns:",
+    columns,
+    "Do not output CSV unless I explicitly ask for it.",
+    "---"
+  ].join("\n");
+
   const wrapped = [
     "<!--PERSISTED-NOTION-DATA:BEGIN-->",
     lastPulledCsv,
-    "<!--PERSISTED-NOTION-DATA:END-->"
+    "<!--PERSISTED-NOTION-DATA:END-->",
+    instructions
   ].join("\n");
 
   const response = await chrome.tabs.sendMessage(tab.id, {
@@ -102,7 +125,7 @@ async function injectIntoChatGpt() {
   }
 
   await navigator.clipboard.writeText(wrapped);
-  setStatus("Injected persisted CSV into prompt and copied it to clipboard.");
+  setStatus("Injected persisted CSV + Instructions into prompt.");
 }
 
 document.getElementById("extractBtn").addEventListener("click", () => {
